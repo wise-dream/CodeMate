@@ -55,7 +55,7 @@ It is designed for **beginners** who want to set up their development environmen
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/CodeMate.git
+   git clone https://github.com/wise-dream/CodeMate
    cd CodeMate
    ```
 2. Make the script executable:
