@@ -59,8 +59,10 @@ It is designed for **beginners** who want to set up their development environmen
    cd CodeMate
    ```
 2. Make the script executable:
-   ```chmod +x codemate_en.sh```
-3. Run the script:
+   ```
+   chmod +x codemate_en.sh
+   ```
+4. Run the script:
    ```
    ./codemate_en.sh
    ```
