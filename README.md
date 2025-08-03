@@ -50,10 +50,10 @@ Download Git here: https://git-scm.com/download/win
 
 Open Git Bash and run:
 
-\`\`\`bash
-git clone https://github.com/yourusername/CodeMate.git
+```bash
+git clone https://github.com/wise-dream/CodeMate
 cd CodeMate
-\`\`\`
+```
 
 ---
 
@@ -61,15 +61,15 @@ cd CodeMate
 
 English version:
 
-\`\`\`bash
+```bash
 ./codemate.sh
-\`\`\`
+```
 
 Russian version:
 
-\`\`\`bash
+```bash
 ./codemate-ru.sh
-\`\`\`
+```
 
 > ⚠️ Tip:  
 > It's recommended to run Git Bash as Administrator to allow Chocolatey to install tools properly.  
@@ -92,9 +92,9 @@ Russian version:
 
 You can run the script again and select:
 
-\`\`\`bash
+```bash
 2) Uninstall selected tools
-\`\`\`
+```
 
 > If a tool was installed manually (not via Chocolatey), CodeMate tries to remove it using alternative uninstall commands.
 
