@@ -51,7 +51,7 @@ Download Git here: https://git-scm.com/download/win
 Open Git Bash and run:
 
 ```bash
-git clone https://github.com/yourusername/CodeMate.git
+git clone https://github.com/wise-dream/CodeMate
 cd CodeMate
 ```
 
@@ -67,9 +67,9 @@ English version:
 
 Russian version:
 
-\`\`\`bash
+```bash
 ./codemate-ru.sh
-\`\`\`
+```
 
 > ⚠️ Tip:  
 > It's recommended to run Git Bash as Administrator to allow Chocolatey to install tools properly.  
