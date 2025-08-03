@@ -1,128 +1,145 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-# =========================
-# CodeMate - Dev Tools Installer
-# =========================
+DRY_RUN=false
 
-# --- Functions ---
-function info_admin_warning {
-    echo "ℹ️  It is recommended to run Git Bash as Administrator for proper Chocolatey functionality."
-    echo "   (Admin rights check may be inaccurate in Git Bash)"
-    echo "👉 How to do it:"
-    echo "   1️⃣ Close this Git Bash window"
-    echo "   2️⃣ Find the 'Git Bash' shortcut"
-    echo "   3️⃣ Right-click → 'Run as administrator'"
-    echo
-    read -rp "Continue without confirmed admin rights? [y/N]: " confirm
-    [[ "$confirm" != "y" && "$confirm" != "Y" ]] && exit 1
-}
-
-function ensure_choco {
+# --- Check and install Chocolatey (Windows) ---
+check_choco() {
+  if ! command -v choco &>/dev/null; then
+    echo "⚠️  Chocolatey not found. Attempting to install..."
+    powershell.exe -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; \
+      [System.Net.ServicePointManager]::SecurityProtocol = 'Tls12'; \
+      iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
     if ! command -v choco &>/dev/null; then
-        echo "⚠️ Chocolatey not found. Installing..."
-        powershell.exe -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; \
-        [System.Net.ServicePointManager]::SecurityProtocol = 'Tls12'; \
-        iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))"
-        echo "✅ Chocolatey installed. Please restart Git Bash and re-run this script."
-        exit 0
-    else
-        echo "✅ Chocolatey found"
+      echo "❌ Failed to install Chocolatey. Please install manually: https://chocolatey.org/install"
+      exit 1
     fi
+  fi
 }
 
-function install_choco {
-    local pkg=$1
-    if choco list --local-only | grep -iq "^$pkg "; then
-        echo "✅ $pkg already installed"
-    else
-        choco install "$pkg" -y
-    fi
+# --- Check if tool is installed ---
+verify_installed() {
+  command -v "$2" &>/dev/null
 }
 
-function uninstall_choco {
-    local pkg=$1
-    if choco list --local-only | grep -iq "^$pkg "; then
-        choco uninstall "$pkg" -y
-    else
-        echo "⚠️ $pkg is not installed via Chocolatey"
-    fi
+# --- Force uninstall (Windows) ---
+force_uninstall() {
+  local pkg="$1"
+  echo "⚠️  Force removing $pkg..."
+  rm -rf "/c/ProgramData/chocolatey/lib/$pkg" 2>/dev/null || true
+  rm -rf "/c/ProgramData/chocolatey/bin/$pkg*" 2>/dev/null || true
+  echo "✅ Forced removal of $pkg completed."
 }
 
-function install_rust {
-    if command -v rustc &>/dev/null; then
-        echo "✅ Rust already installed"
-    else
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        source $HOME/.cargo/env
-    fi
+# --- Add required repos (Linux) ---
+ensure_repos() {
+  local tool=$1
+  case $tool in
+    "Docker")
+      sudo install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+        $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+      ;;
+    "VS Code")
+      sudo install -m 0755 -d /etc/apt/keyrings
+      wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/packages.microsoft.gpg >/dev/null
+      echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" | sudo tee /etc/apt/sources.list.d/vscode.list >/dev/null
+      ;;
+  esac
 }
 
-function uninstall_rust {
-    if command -v rustup &>/dev/null; then
-        rustup self uninstall -y
-    else
-        echo "⚠️ Rust not found"
-    fi
-}
-
-function install_go {
-    install_choco golang
-}
-
-function uninstall_go {
-    uninstall_choco golang
-}
-
-# --- Tools list ---
-TOOLS=(
-    "GCC:gcc"
-    "Make:make"
-    "Git:git"
-    "Python:python"
-    "Node.js:nodejs-lts"
-    "Docker:docker-desktop"
-    "VS Code:visualstudiocode"
-    "curl/wget:curl"
-    "PostgreSQL Client:postgresql"
-    "MySQL Client:mysql"
-    "SQLite:sqlite"
-    "DBeaver:dbeaver"
-    "Java JDK:openjdk"
-    "Go:golang"
-    "Rust:rustup"
-    "PHP:php"
+# --- Package dictionaries ---
+declare -A PKG_CHOCOLATEY=(
+  ["GCC"]="mingw-w64"
+  ["Make"]="make"
+  ["Git"]="git"
+  ["Python"]="python"
+  ["Node.js"]="nodejs"
+  ["Docker"]="docker-desktop"
+  ["VS Code"]="vscode"
+  ["curl"]="curl"
+  ["wget"]="wget"
+  ["PostgreSQL Client"]="postgresql"
+  ["MySQL Client"]="mysql"
+  ["SQLite"]="sqlite"
+  ["DBeaver"]="dbeaver"
+  ["Java JDK"]="temurin11"
+  ["Go"]="golang"
+  ["Rust"]="rust"
+  ["PHP"]="php"
 )
 
-# --- Script start ---
-info_admin_warning
-ensure_choco
+declare -A PKG_APT=(
+  ["GCC"]="build-essential"
+  ["Make"]="make"
+  ["Git"]="git"
+  ["Python"]="python3"
+  ["Node.js"]="nodejs npm"
+  ["Docker"]="docker-ce docker-ce-cli containerd.io"
+  ["VS Code"]="code"
+  ["curl"]="curl"
+  ["wget"]="wget"
+  ["PostgreSQL Client"]="postgresql-client"
+  ["MySQL Client"]="mysql-client"
+  ["SQLite"]="sqlite3"
+  ["DBeaver"]="dbeaver"
+  ["Java JDK"]="openjdk-11-jdk"
+  ["Go"]="golang-go"
+  ["Rust"]="rustc"
+  ["PHP"]="php"
+)
 
-echo "📦 Package manager: windows"
-echo "Choose tools (example: 1 3 5):"
-for i in "${!TOOLS[@]}"; do
-    echo "$((i+1))) ${TOOLS[$i]%%:*}"
+PKG_MANAGER="apt-get"
+if command -v choco &>/dev/null; then
+  PKG_MANAGER="choco"
+fi
+
+check_choco
+
+# --- Menu ---
+tools=( "GCC" "Make" "Git" "Python" "Node.js" "Docker" "VS Code" "curl" "wget" "PostgreSQL Client" "MySQL Client" "SQLite" "DBeaver" "Java JDK" "Go" "Rust" "PHP" )
+
+echo "⚠️  It is recommended to run Git Bash as Administrator."
+echo "⚠️  Without administrator rights, some installations/uninstallations may fail."
+echo "Select tools to manage (space-separated):"
+for i in "${!tools[@]}"; do echo "$i) ${tools[$i]}"; done
+read -rp "> " selection
+
+echo "Select action: (1 - Install, 2 - Uninstall)"
+read -rp "> " action
+
+for idx in $selection; do
+  tool="${tools[$idx]}"
+  case $action in
+    1)
+      if verify_installed "$tool" "$tool" || verify_installed "$tool" "${tool,,}"; then
+        echo "✅ $tool is already installed."
+        continue
+      fi
+      echo "🔹 Installing $tool..."
+      case $PKG_MANAGER in
+        choco) choco install -y "${PKG_CHOCOLATEY[$tool]}" ;;
+        apt-get)
+          ensure_repos "$tool"
+          sudo apt-get update -qq
+          sudo apt-get install -y ${PKG_APT[$tool]}
+          ;;
+      esac
+      ;;
+    2)
+      echo "🔹 Uninstalling $tool..."
+      case $PKG_MANAGER in
+        choco)
+          if ! choco uninstall -y "${PKG_CHOCOLATEY[$tool]}" --skip-autouninstaller; then
+            force_uninstall "${PKG_CHOCOLATEY[$tool]}"
+          fi
+          ;;
+        apt-get) sudo apt-get purge -y ${PKG_APT[$tool]} || true ;;
+      esac
+      ;;
+  esac
 done
 
-read -rp "Your choice: " choices
-read -rp $'\nChoose action:\n1) Install selected tools\n2) Uninstall selected tools\nYour choice: ' action
-
-for num in $choices; do
-    tool_name="${TOOLS[$((num-1))]%%:*}"
-    tool_pkg="${TOOLS[$((num-1))]##*:}"
-    echo -e "\n=== ⚙️ Processing: $tool_name ==="
-    case $tool_name in
-        "Rust")
-            [[ "$action" == "1" ]] && install_rust || uninstall_rust
-            ;;
-        "Go")
-            [[ "$action" == "1" ]] && install_go || uninstall_go
-            ;;
-        *)
-            [[ "$action" == "1" ]] && install_choco "$tool_pkg" || uninstall_choco "$tool_pkg"
-            ;;
-    esac
-    echo "✅ Done: $tool_name"
-done
-
-echo "🎉 All operations completed!"
+echo "✅ Operation completed."

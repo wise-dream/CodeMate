@@ -1,83 +1,145 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-# =========================
-# CodeMate - Установка Dev-инструментов
-# =========================
+DRY_RUN=false
 
-function info_admin_warning {
-    echo "ℹ️  Рекомендуется запускать Git Bash с правами администратора для корректной работы Chocolatey."
-    echo "   (Проверка прав администратора в Git Bash может быть неточной)"
-    echo "👉 Как это сделать:"
-    echo "   1️⃣ Закройте текущее окно Git Bash"
-    echo "   2️⃣ Найдите ярлык 'Git Bash'"
-    echo "   3️⃣ ПКМ → 'Запуск от имени администратора'"
-    echo
-    read -rp "Продолжить выполнение без подтверждения прав администратора? [y/N]: " confirm
-    [[ "$confirm" != "y" && "$confirm" != "Y" ]] && exit 1
-}
-
-function ensure_choco {
+# --- Проверка и установка Chocolatey (Windows) ---
+check_choco() {
+  if ! command -v choco &>/dev/null; then
+    echo "⚠️  Chocolatey не найден. Попытка установки..."
+    powershell.exe -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; \
+      [System.Net.ServicePointManager]::SecurityProtocol = 'Tls12'; \
+      iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
     if ! command -v choco &>/dev/null; then
-        echo "⚠️ Chocolatey не найден. Устанавливаю..."
-        powershell.exe -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; \
-        [System.Net.ServicePointManager]::SecurityProtocol = 'Tls12'; \
-        iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))"
-        echo "✅ Chocolatey установлен. Пожалуйста, перезапустите Git Bash и запустите скрипт снова."
-        exit 0
-    else
-        echo "✅ Chocolatey найден"
+      echo "❌ Не удалось установить Chocolatey. Установите вручную: https://chocolatey.org/install"
+      exit 1
     fi
+  fi
 }
 
-function install_choco { local pkg=$1; if choco list --local-only | grep -iq "^$pkg "; then echo "✅ $pkg уже установлен"; else choco install "$pkg" -y; fi; }
-function uninstall_choco { local pkg=$1; if choco list --local-only | grep -iq "^$pkg "; then choco uninstall "$pkg" -y; else echo "⚠️ $pkg не установлен через Chocolatey"; fi; }
+# --- Проверка установленного ПО ---
+verify_installed() {
+  command -v "$2" &>/dev/null
+}
 
-function install_rust { if command -v rustc &>/dev/null; then echo "✅ Rust уже установлен"; else curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; source $HOME/.cargo/env; fi; }
-function uninstall_rust { if command -v rustup &>/dev/null; then rustup self uninstall -y; else echo "⚠️ Rust не найден"; fi; }
+# --- Принудительное удаление (Windows) ---
+force_uninstall() {
+  local pkg="$1"
+  echo "⚠️  Принудительное удаление $pkg..."
+  rm -rf "/c/ProgramData/chocolatey/lib/$pkg" 2>/dev/null || true
+  rm -rf "/c/ProgramData/chocolatey/bin/$pkg*" 2>/dev/null || true
+  echo "✅ Принудительное удаление $pkg завершено."
+}
 
-function install_go { install_choco golang; }
-function uninstall_go { uninstall_choco golang; }
+# --- Установка репозиториев (Linux) ---
+ensure_repos() {
+  local tool=$1
+  case $tool in
+    "Docker")
+      sudo install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+        $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+      ;;
+    "VS Code")
+      sudo install -m 0755 -d /etc/apt/keyrings
+      wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /etc/apt/keyrings/packages.microsoft.gpg >/dev/null
+      echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" | sudo tee /etc/apt/sources.list.d/vscode.list >/dev/null
+      ;;
+  esac
+}
 
-TOOLS=(
-    "GCC:gcc"
-    "Make:make"
-    "Git:git"
-    "Python:python"
-    "Node.js:nodejs-lts"
-    "Docker:docker-desktop"
-    "VS Code:visualstudiocode"
-    "curl/wget:curl"
-    "PostgreSQL Client:postgresql"
-    "MySQL Client:mysql"
-    "SQLite:sqlite"
-    "DBeaver:dbeaver"
-    "Java JDK:openjdk"
-    "Go:golang"
-    "Rust:rustup"
-    "PHP:php"
+# --- Словари пакетов ---
+declare -A PKG_CHOCOLATEY=(
+  ["GCC"]="mingw-w64"
+  ["Make"]="make"
+  ["Git"]="git"
+  ["Python"]="python"
+  ["Node.js"]="nodejs"
+  ["Docker"]="docker-desktop"
+  ["VS Code"]="vscode"
+  ["curl"]="curl"
+  ["wget"]="wget"
+  ["PostgreSQL Client"]="postgresql"
+  ["MySQL Client"]="mysql"
+  ["SQLite"]="sqlite"
+  ["DBeaver"]="dbeaver"
+  ["Java JDK"]="temurin11"
+  ["Go"]="golang"
+  ["Rust"]="rust"
+  ["PHP"]="php"
 )
 
-info_admin_warning
-ensure_choco
+declare -A PKG_APT=(
+  ["GCC"]="build-essential"
+  ["Make"]="make"
+  ["Git"]="git"
+  ["Python"]="python3"
+  ["Node.js"]="nodejs npm"
+  ["Docker"]="docker-ce docker-ce-cli containerd.io"
+  ["VS Code"]="code"
+  ["curl"]="curl"
+  ["wget"]="wget"
+  ["PostgreSQL Client"]="postgresql-client"
+  ["MySQL Client"]="mysql-client"
+  ["SQLite"]="sqlite3"
+  ["DBeaver"]="dbeaver"
+  ["Java JDK"]="openjdk-11-jdk"
+  ["Go"]="golang-go"
+  ["Rust"]="rustc"
+  ["PHP"]="php"
+)
 
-echo "📦 Пакетный менеджер: windows"
-echo "Выберите инструменты (например: 1 3 5):"
-for i in "${!TOOLS[@]}"; do echo "$((i+1))) ${TOOLS[$i]%%:*}"; done
+PKG_MANAGER="apt-get"
+if command -v choco &>/dev/null; then
+  PKG_MANAGER="choco"
+fi
 
-read -rp "Ваш выбор: " choices
-read -rp $'\nВыберите действие:\n1) Установить выбранные инструменты\n2) Удалить выбранные инструменты\nВаш выбор: ' action
+check_choco
 
-for num in $choices; do
-    tool_name="${TOOLS[$((num-1))]%%:*}"
-    tool_pkg="${TOOLS[$((num-1))]##*:}"
-    echo -e "\n=== ⚙️ Обработка: $tool_name ==="
-    case $tool_name in
-        "Rust") [[ "$action" == "1" ]] && install_rust || uninstall_rust ;;
-        "Go") [[ "$action" == "1" ]] && install_go || uninstall_go ;;
-        *) [[ "$action" == "1" ]] && install_choco "$tool_pkg" || uninstall_choco "$tool_pkg" ;;
-    esac
-    echo "✅ Готово: $tool_name"
+# --- Меню ---
+tools=( "GCC" "Make" "Git" "Python" "Node.js" "Docker" "VS Code" "curl" "wget" "PostgreSQL Client" "MySQL Client" "SQLite" "DBeaver" "Java JDK" "Go" "Rust" "PHP" )
+
+echo "⚠️  Рекомендуется запускать Git Bash с правами администратора."
+echo "⚠️  Без прав администратора некоторые установки/удаления могут завершиться с ошибками."
+echo "Выберите инструменты (через пробел):"
+for i in "${!tools[@]}"; do echo "$i) ${tools[$i]}"; done
+read -rp "> " selection
+
+echo "Выберите действие: (1 - Установить, 2 - Удалить)"
+read -rp "> " action
+
+for idx in $selection; do
+  tool="${tools[$idx]}"
+  case $action in
+    1)
+      if verify_installed "$tool" "$tool" || verify_installed "$tool" "${tool,,}"; then
+        echo "✅ $tool уже установлен."
+        continue
+      fi
+      echo "🔹 Устанавливаю $tool..."
+      case $PKG_MANAGER in
+        choco) choco install -y "${PKG_CHOCOLATEY[$tool]}" ;;
+        apt-get)
+          ensure_repos "$tool"
+          sudo apt-get update -qq
+          sudo apt-get install -y ${PKG_APT[$tool]}
+          ;;
+      esac
+      ;;
+    2)
+      echo "🔹 Удаляю $tool..."
+      case $PKG_MANAGER in
+        choco)
+          if ! choco uninstall -y "${PKG_CHOCOLATEY[$tool]}" --skip-autouninstaller; then
+            force_uninstall "${PKG_CHOCOLATEY[$tool]}"
+          fi
+          ;;
+        apt-get) sudo apt-get purge -y ${PKG_APT[$tool]} || true ;;
+      esac
+      ;;
+  esac
 done
 
-echo "🎉 Все операции завершены!"
+echo "✅ Операция завершена."
