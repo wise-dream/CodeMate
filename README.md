@@ -74,6 +74,8 @@ It is designed for **beginners** who want to set up their development environmen
 
    On Linux, dependencies may remain after uninstall (you can manually run):
 
-   ```sudo apt-get autoremove -y```
+   ```
+   sudo apt-get autoremove -y
+   ```
 
 
