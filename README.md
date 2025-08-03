@@ -67,6 +67,8 @@ It is designed for **beginners** who want to set up their development environmen
    ./codemate_en.sh
    ```
 
+---
+
 ## ⚠️ Notes
    It is recommended to run Git Bash as Administrator on Windows for smooth installation.
 
