@@ -79,3 +79,8 @@ CodeMate — это **простой Bash-скрипт**, который пом�
    ```
    sudo apt-get autoremove -y
    ```
+
+---
+
+<img width="1830" height="288" alt="изображение" src="https://github.com/user-attachments/assets/d2b72139-18f5-4f6f-a995-c11957aaa5a6" />
+https://www.virustotal.com/gui/file/621dfeca8d60d8c34346427067141e73197ce584907061903fd81f150491ac1c/detection
