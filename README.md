@@ -80,4 +80,8 @@ It is designed for **beginners** who want to set up their development environmen
    sudo apt-get autoremove -y
    ```
 
+---
+
+<img width="1830" height="288" alt="изображение" src="https://github.com/user-attachments/assets/ea1dd909-2184-4c01-bd79-794c6c56b613" />
+https://www.virustotal.com/gui/file/621dfeca8d60d8c34346427067141e73197ce584907061903fd81f150491ac1c/detection
 
